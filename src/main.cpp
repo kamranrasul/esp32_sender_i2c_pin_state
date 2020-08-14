@@ -25,6 +25,9 @@
 #define INPIN_3 26
 #define INPIN_4 27
 
+// scheduler times
+#define dataSendTime 20000
+
 // declaration of functions for setup
 void pinSetup();
 void bmeSetup();
@@ -40,8 +43,8 @@ void refresh_readings();
 void detectChange();
 
 // Local WiFi Credentials
-const char *ssid = "Hidden_network";
-const char *password = "pak.awan.pk";
+const char *ssid = "YOUR SSID";
+const char *password = "YOUR PASS";
 
 // time variable setup
 const char *ntpServer = "pool.ntp.org";
@@ -73,7 +76,7 @@ struct_message myData;
 esp_now_peer_info_t peerInfo;
 
 // Setup tasks for the task scheduler
-Task dataCommunication(20000, TASK_FOREVER, &espNowSend);
+Task dataCommunication(dataSendTime, TASK_FOREVER, &espNowSend);
 
 // Create the scheduler
 Scheduler runner;
