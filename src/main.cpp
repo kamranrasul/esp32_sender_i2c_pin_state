@@ -13,8 +13,6 @@
 #include <esp_now.h>         // esp_now for communication
 #include <WiFi.h>            // for WiFi communiation to fetch time
 #include <Adafruit_BME280.h> // for BME280 sensor
-#include <TFT_eSPI.h>        // for tft display
-#include "SPIFFS.h"          // for file flash system upload
 #include "time.h"            // for current time and date
 #include "TaskScheduler.h"   // for mimic delay
 
@@ -27,34 +25,31 @@
 #define INPIN_3 26
 #define INPIN_4 27
 
+// scheduler times
+#define dataSendTime 20000
+
 // declaration of functions for setup
-void initSPIFFS();
 void pinSetup();
 void bmeSetup();
 void timeSetup();
 void espNowSetup();
-void tftSetup();
 
 // declaration of functions for performing
-void countDownTimer();
 void readPins();
 void OnDataSent();
 void printLocalTime();
 void espNowSend();
 void refresh_readings();
-void tftDisplay();
 void detectChange();
 
 // Local WiFi Credentials
-#define WIFI_SSID "YOUR SSID"
-#define WIFI_PASS "YOUR PASS"
+const char *ssid = "YOUR SSID";
+const char *password = "YOUR PASS";
+
 // time variable setup
 const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = -25362;
 const int daylightOffset_sec = 3600;
-
-// count down timer
-int count = 10;
 
 // sensor variable
 Adafruit_BME280 bme;
@@ -80,17 +75,8 @@ struct_message myData;
 // Register peer
 esp_now_peer_info_t peerInfo;
 
-// tft is global to this file only
-TFT_eSPI tft = TFT_eSPI();
-
-// for tft background and font-background color
-uint16_t bg = TFT_BLACK;
-uint16_t fg = TFT_WHITE;
-
 // Setup tasks for the task scheduler
-Task dataCommunication(20000, TASK_FOREVER, &espNowSend);
-Task dataDisplayTFT(9800, TASK_FOREVER, &tftDisplay);
-Task dataScheduler(1000, TASK_FOREVER, &countDownTimer);
+Task dataCommunication(dataSendTime, TASK_FOREVER, &espNowSend);
 
 // Create the scheduler
 Scheduler runner;
@@ -101,11 +87,9 @@ void setup()
   // Init Serial Monitor
   Serial.begin(115200);
 
-  initSPIFFS();
   bmeSetup();
   timeSetup();
   pinSetup();
-  tftSetup();
   espNowSetup();
 
   // Start the task scheduler
@@ -113,13 +97,9 @@ void setup()
 
   // Add the task to the scheduler
   runner.addTask(dataCommunication);
-  runner.addTask(dataDisplayTFT);
-  runner.addTask(dataScheduler);
 
   // Enable the task
   dataCommunication.enable();
-  dataDisplayTFT.enable();
-  dataScheduler.enable();
 }
 
 // the loop functions
@@ -128,23 +108,8 @@ void loop()
   // Execute the scheduler runner
   runner.execute();
 
-  // detects any change on the inputs and respond accordingly
+    // detects any change on the inputs and respond accordingly
   detectChange();
-}
-
-// SPIFFS Initialization
-void initSPIFFS()
-{
-  if (!SPIFFS.begin())
-  {
-    Serial.println("Cannot mount SPIFFS volume...");
-    while (1)
-      ; // infinite loop
-  }
-  else
-  {
-    Serial.println("SPIFFS volume mounted properly");
-  }
 }
 
 // time function
@@ -242,28 +207,6 @@ void espNowSetup()
   }
 }
 
-// setting up tft
-void tftSetup()
-{
-  // Setup the TFT
-  tft.begin();
-  tft.setRotation(3);
-  tft.loadFont("NotoSansBold20");
-  tft.setTextColor(fg, bg);
-  tft.fillScreen(bg);
-  tft.setCursor(0, 0);
-  tft.println("Hello!");
-  tft.println("Searching for the sensor...");
-}
-
-// count down timer on the tft
-void countDownTimer()
-{
-  tft.fillRect(279, 4, 13, 18, bg);
-  tft.setCursor(280, 5);
-  tft.print(--count == -1 ? 9 : count);
-}
-
 // reading Pin Status
 void readPins()
 {
@@ -337,88 +280,6 @@ void refresh_readings()
   myData.altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
 }
 
-// displaying on tft
-void tftDisplay()
-{
-  // If you set this, the TFT will not work!!!
-  count = 10;
-
-  uint16_t bg = TFT_BLACK;
-  uint16_t fg = TFT_WHITE;
-
-  // displaying on the TFT
-  tft.setCursor(5, 5);
-  tft.setTextColor(fg, bg);
-  // Create TTF fonts using instructions at https://pages.uoregon.edu/park/Processing/process5.html
-  tft.loadFont("NotoSansBold20");
-  tft.print("Right now, next update in: ");
-  tft.fillRect(5, 100, 30, 30, bg);
-  //  tft.setCursor(5, 100);
-  //  tft.println(count);
-
-  tft.setTextColor(TFT_YELLOW, bg);
-
-  // Temperature
-  tft.fillRect(10, 30, 250, 30, bg);
-  tft.setCursor(10, 30);
-  tft.printf("Temperature:");
-  tft.setCursor(160, 30);
-  tft.print(myData.temperature);
-  tft.println("  °C");
-
-  // Humidity
-  tft.fillRect(10, 45, 250, 30, bg);
-  tft.setCursor(10, 55);
-  tft.print("Humidity:");
-  tft.setCursor(160, 55);
-  tft.print(myData.humidity);
-  tft.println("   %");
-
-  // Pressure
-  tft.fillRect(10, 80, 250, 30, bg);
-  tft.setCursor(10, 80);
-  tft.print("Pressure:");
-  tft.setCursor(160, 80);
-  tft.print(myData.pressure);
-  tft.println(" hPa");
-
-  // Appx altitude
-  tft.fillRect(10, 105, 250, 30, bg);
-  tft.setCursor(10, 105);
-  tft.print("Altitude:");
-  tft.setCursor(160, 105);
-  tft.print(myData.altitude);
-  tft.println("   m");
-
-  // INPUT 14
-  tft.fillRect(10, 130, 250, 30, bg);
-  tft.setCursor(10, 130);
-  tft.print("Light:");
-  tft.setCursor(160, 130);
-  tft.println(myData.pinStatus[0] ? "ON" : "OFF");
-
-  // INPUT 210
-  tft.fillRect(10, 155, 250, 30, bg);
-  tft.setCursor(10, 155);
-  tft.print("Furnace:");
-  tft.setCursor(160, 155);
-  tft.println(myData.pinStatus[1] ? "ON" : "OFF");
-
-  // INPUT 26
-  tft.fillRect(10, 180, 250, 30, bg);
-  tft.setCursor(10, 180);
-  tft.print("Exhaust:");
-  tft.setCursor(160, 180);
-  tft.println(myData.pinStatus[2] ? "ON" : "OFF");
-
-  // INPUT 27
-  tft.fillRect(10, 205, 250, 30, bg);
-  tft.setCursor(10, 205);
-  tft.print("Humidifier:");
-  tft.setCursor(160, 205);
-  tft.println(myData.pinStatus[3] ? "ON" : "OFF");
-}
-
 // kind of interrupt function
 void detectChange()
 {
@@ -431,13 +292,9 @@ void detectChange()
     Serial.println("Change Detected...");
     // Disable the tasks
     dataCommunication.disable();
-    dataDisplayTFT.disable();
-    dataScheduler.disable();
 
     // Enable the task
     dataCommunication.enable();
-    dataDisplayTFT.enable();
-    dataScheduler.enable();
 
     // Update the change
     delay(1000);
