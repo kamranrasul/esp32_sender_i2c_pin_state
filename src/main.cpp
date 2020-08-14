@@ -46,9 +46,8 @@ void tftDisplay();
 void detectChange();
 
 // Local WiFi Credentials
-const char *ssid = "Hidden_network";
-const char *password = "pak.awan.pk";
-
+#define WIFI_SSID "YOUR SSID"
+#define WIFI_PASS "YOUR PASS"
 // time variable setup
 const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = -25362;
