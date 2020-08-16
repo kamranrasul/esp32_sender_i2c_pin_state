@@ -9,12 +9,15 @@
   
 *********/
 
-#include <Arduino.h>         // base library
-#include <esp_now.h>         // esp_now for communication
-#include <WiFi.h>            // for WiFi communiation to fetch time
-#include <Adafruit_BME280.h> // for BME280 sensor
-#include "time.h"            // for current time and date
-#include "TaskScheduler.h"   // for mimic delay
+#include <Arduino.h>          // base library
+#include <esp_now.h>          // esp_now for communication
+#include <WiFi.h>             // for WiFi communiation to fetch time
+#include <Adafruit_Sensor.h>  // default sensor library
+#include <Adafruit_BME280.h>  // for BME280 sensor
+#include <Adafruit_MPU6050.h> // for MPU6050 sensor
+#include <Wire.h>             // i2c base library
+#include "time.h"             // for current time and date
+#include "TaskScheduler.h"    // for mimic delay
 
 // for setting pressure
 #define SEALEVELPRESSURE_HPA (1013.25)
@@ -31,6 +34,7 @@
 // declaration of functions for setup
 void pinSetup();
 void bmeSetup();
+void mpu6050Setup();
 void timeSetup();
 void espNowSetup();
 
@@ -43,8 +47,8 @@ void refresh_readings();
 void detectChange();
 
 // Local WiFi Credentials
-const char *ssid = "YOUR SSID";
-const char *password = "YOUR PASS";
+const char *WIFI_SSID = "YOUR WIFI SSID";
+const char *WIFI_PASS = "YOUR WIFI PASS";
 
 // time variable setup
 const char *ntpServer = "pool.ntp.org";
@@ -53,24 +57,31 @@ const int daylightOffset_sec = 3600;
 
 // sensor variable
 Adafruit_BME280 bme;
+Adafruit_MPU6050 mpu;
 
 // RECEIVER'S MAC Address
 uint8_t broadcastAddress[] = {0x24, 0x62, 0xAB, 0xF9, 0x0E, 0x98};
 
-// Structure example to send data
-// Must match the receiver structure
+// Must match the sender receiver structure
 typedef struct struct_message
 {
-  int id; // must be unique for each sender board
-  int pinStatus[4];
-  float temperature;
-  float humidity;
-  float pressure;
-  float altitude;
+  int id;            // must be unique for each sender board
+  int pinStatus[4];  // for peripheral status
+  float temperature; // for storing temperature
+  float humidity;    // for storing himmidity
+  float pressure;    // for storing pressure
+  float altitude;    // for storing altitude
+
+  float temp6050;    // for storing onboard temperature
+  float A_values[3]; // for storing accelrometer values
+  float G_values[3]; // for storing gyroscope values
 } struct_message;
 
 //Create a struct_message called myData
 struct_message myData;
+
+// for getting values from MPU6050 sensor
+float AcX, AcY, AcZ, tmp, GyX, GyY, GyZ;
 
 // Register peer
 esp_now_peer_info_t peerInfo;
@@ -88,6 +99,7 @@ void setup()
   Serial.begin(115200);
 
   bmeSetup();
+  mpu6050Setup();
   timeSetup();
   pinSetup();
   espNowSetup();
@@ -108,7 +120,7 @@ void loop()
   // Execute the scheduler runner
   runner.execute();
 
-    // detects any change on the inputs and respond accordingly
+  // detects any change on the inputs and respond accordingly
   detectChange();
 }
 
@@ -150,8 +162,8 @@ void pinSetup()
 void timeSetup()
 {
   // connect to WiFi
-  Serial.printf("Connecting to %s ", ssid);
-  WiFi.begin(ssid, password);
+  Serial.printf("Connecting to %s ", WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
   while (WiFi.status() != WL_CONNECTED)
   {
     delay(500);
@@ -171,10 +183,96 @@ void timeSetup()
 // setting up bme i2c
 void bmeSetup()
 {
-  bool status = bme.begin(BME280_ADDRESS_ALTERNATE);
-  if (!status)
+  if (bme.begin(BME280_ADDRESS_ALTERNATE))
   {
-    Serial.println("Could not find a valid BME280 sensor, check wiring!");
+    Serial.println("Found BME280 Chip...");
+  }
+  else
+  {
+    Serial.println("Could not find BME280 Chip, check wiring!");
+    while (1)
+    {
+      Serial.print(".");
+    }
+  }
+}
+
+// setting up MPU6050 i2c
+void mpu6050Setup()
+{
+  if (mpu.begin())
+  {
+    Serial.println("Found MPU6050 Chip...");
+  }
+  else
+  {
+    Serial.println("Could not find MPU6050 Chip, check wiring!");
+    while (1)
+    {
+      Serial.print(".");
+    }
+  }
+
+  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+  Serial.print("Accelerometer range set to: ");
+  switch (mpu.getAccelerometerRange())
+  {
+  case MPU6050_RANGE_2_G:
+    Serial.println("+-2G");
+    break;
+  case MPU6050_RANGE_4_G:
+    Serial.println("+-4G");
+    break;
+  case MPU6050_RANGE_8_G:
+    Serial.println("+-8G");
+    break;
+  case MPU6050_RANGE_16_G:
+    Serial.println("+-16G");
+    break;
+  }
+  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+  Serial.print("Gyro range set to: ");
+  switch (mpu.getGyroRange())
+  {
+  case MPU6050_RANGE_250_DEG:
+    Serial.println("+- 250 deg/s");
+    break;
+  case MPU6050_RANGE_500_DEG:
+    Serial.println("+- 500 deg/s");
+    break;
+  case MPU6050_RANGE_1000_DEG:
+    Serial.println("+- 1000 deg/s");
+    break;
+  case MPU6050_RANGE_2000_DEG:
+    Serial.println("+- 2000 deg/s");
+    break;
+  }
+
+  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+  Serial.print("Filter bandwidth set to: ");
+  switch (mpu.getFilterBandwidth())
+  {
+  case MPU6050_BAND_260_HZ:
+    Serial.println("260 Hz");
+    break;
+  case MPU6050_BAND_184_HZ:
+    Serial.println("184 Hz");
+    break;
+  case MPU6050_BAND_94_HZ:
+    Serial.println("94 Hz");
+    break;
+  case MPU6050_BAND_44_HZ:
+    Serial.println("44 Hz");
+    break;
+  case MPU6050_BAND_21_HZ:
+    Serial.println("21 Hz");
+    break;
+  case MPU6050_BAND_10_HZ:
+    Serial.println("10 Hz");
+    break;
+  case MPU6050_BAND_5_HZ:
+    Serial.println("5 Hz");
+    break;
   }
 }
 
@@ -217,6 +315,9 @@ void readPins()
   myData.pinStatus[2] = digitalRead(INPIN_3);
   myData.pinStatus[3] = digitalRead(INPIN_4);
 
+  Serial.println();
+  Serial.println("*** Controller Values ***");
+
   Serial.printf("Control 14 is %3s.", myData.pinStatus[0] ? "ON" : "OFF");
   Serial.println();
 
@@ -233,6 +334,9 @@ void espNowSend()
   Serial.println();
   Serial.println("****************************************");
 
+  Serial.print("My MAC Address:  ");
+  Serial.println(WiFi.macAddress());
+
   // display time
   printLocalTime();
 
@@ -242,20 +346,27 @@ void espNowSend()
   // reading from BME
   refresh_readings();
 
-  // displaying on the serial output
+  // displaying BME280 values on the serial output
   Serial.println();
-  Serial.printf("Temperature: %-6.2f °C", myData.temperature);
+  Serial.println("*** BME280 Values ***");
+  Serial.printf("Temperature:   %-6.2f °C", myData.temperature);
   Serial.println();
-  Serial.printf("Humidity:    %-6.2f %%", myData.humidity);
+  Serial.printf("Humidity:      %-6.2f %%", myData.humidity);
   Serial.println();
-  Serial.printf("Pressure:    %-6.2f hPa", myData.pressure);
+  Serial.printf("Pressure:      %-6.2f hPa", myData.pressure);
   Serial.println();
-  Serial.printf("Altitude:    %-6.2f m", myData.altitude);
-  Serial.println();
+  Serial.printf("Altitude:      %-6.2f m", myData.altitude);
   Serial.println();
 
-  Serial.print("My MAC Address:  ");
-  Serial.println(WiFi.macAddress());
+  // displaying MPU6050 values on the serial output
+  Serial.println();
+  Serial.println("*** MPU6050 Values ***");
+  Serial.printf("Temperature:   %-6.2f °C", myData.temp6050);
+  Serial.println();
+  Serial.printf("Acceleration   X: %5.2f, Y: %5.2f, Z: %5.2f   m/s^2", myData.A_values[0], myData.A_values[1], myData.A_values[2]);
+  Serial.println();
+  Serial.printf("Rotation       X: %5.2f, Y: %5.2f, Z: %5.2f   rad/s", myData.G_values[0], myData.G_values[1], myData.G_values[2]);
+  Serial.println();
 
   // Send message via ESP-NOW
   esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *)&myData, sizeof(myData));
@@ -273,11 +384,25 @@ void espNowSend()
 // reading from sensor
 void refresh_readings()
 {
-  // reading the readings from the sensor
+  // reading the readings from the BME280 Chip
   myData.temperature = bme.readTemperature();
   myData.humidity = bme.readHumidity();
   myData.pressure = bme.readPressure() / 100.0F;
   myData.altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
+
+  // reading the readings from the MPU6050 Chip
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
+
+  myData.temp6050 = temp.temperature;
+
+  myData.A_values[0] = a.acceleration.x;
+  myData.A_values[1] = a.acceleration.y;
+  myData.A_values[2] = a.acceleration.z;
+
+  myData.G_values[0] = g.gyro.x;
+  myData.G_values[1] = g.gyro.y;
+  myData.G_values[2] = g.gyro.z;
 }
 
 // kind of interrupt function
