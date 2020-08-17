@@ -22,7 +22,7 @@
 // for setting pressure
 #define SEALEVELPRESSURE_HPA (1013.25)
 
-// defining the pins need to control and monitor
+// defining the pins need to monitor
 #define INPIN_1 14
 #define INPIN_2 25
 #define INPIN_3 26
@@ -40,10 +40,10 @@ void espNowSetup();
 
 // declaration of functions for performing
 void readPins();
-void OnDataSent();
 void printLocalTime();
-void espNowSend();
 void refresh_readings();
+void espNowSend();
+void OnDataSent();
 void detectChange();
 
 // Local WiFi Credentials
@@ -67,21 +67,21 @@ typedef struct struct_message
 {
   int id;            // must be unique for each sender board
   int pinStatus[4];  // for peripheral status
+
+  // for BME Chip
   float temperature; // for storing temperature
   float humidity;    // for storing himmidity
   float pressure;    // for storing pressure
   float altitude;    // for storing altitude
 
+  // for MPU Chip
   float temp6050;    // for storing onboard temperature
-  float A_values[3]; // for storing accelrometer values
-  float G_values[3]; // for storing gyroscope values
+  float A_values[3]; // for storing accelrometer values x, y, z
+  float G_values[3]; // for storing gyroscope values x, y, z
 } struct_message;
 
 //Create a struct_message called myData
 struct_message myData;
-
-// for getting values from MPU6050 sensor
-float AcX, AcY, AcZ, tmp, GyX, GyY, GyZ;
 
 // Register peer
 esp_now_peer_info_t peerInfo;
@@ -112,6 +112,7 @@ void setup()
 
   // Enable the task
   dataCommunication.enable();
+  //runner.enableAll();
 }
 
 // the loop functions
@@ -122,25 +123,6 @@ void loop()
 
   // detects any change on the inputs and respond accordingly
   detectChange();
-}
-
-// time function
-void printLocalTime()
-{
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo))
-  {
-    Serial.println("Failed to obtain time");
-    return;
-  }
-  Serial.println(&timeinfo, "\n%A, %B %d, %Y %H:%M:%S");
-}
-
-// callback when data is sent
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
-{
-  Serial.print("\r\nLast Packet Send Status:\t");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
 
 // setting up pin in input mode
@@ -305,6 +287,18 @@ void espNowSetup()
   }
 }
 
+// time function
+void printLocalTime()
+{
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo))
+  {
+    Serial.println("Failed to obtain time");
+    return;
+  }
+  Serial.println(&timeinfo, "\n%A, %B %d, %Y %H:%M:%S");
+}
+
 // reading Pin Status
 void readPins()
 {
@@ -326,6 +320,30 @@ void readPins()
     Serial.printf("Control %d is %3s.", i + 24, myData.pinStatus[i] ? "ON" : "OFF");
     Serial.println();
   }
+}
+
+// reading from sensor
+void refresh_readings()
+{
+  // reading the readings from the BME280 Chip
+  myData.temperature = bme.readTemperature();
+  myData.humidity = bme.readHumidity();
+  myData.pressure = bme.readPressure() / 100.0F;
+  myData.altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
+
+  // reading the readings from the MPU6050 Chip
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
+
+  myData.temp6050 = temp.temperature;
+
+  myData.A_values[0] = a.acceleration.x;
+  myData.A_values[1] = a.acceleration.y;
+  myData.A_values[2] = a.acceleration.z;
+
+  myData.G_values[0] = g.gyro.x;
+  myData.G_values[1] = g.gyro.y;
+  myData.G_values[2] = g.gyro.z;
 }
 
 // esp NOW send message
@@ -381,28 +399,11 @@ void espNowSend()
   }
 }
 
-// reading from sensor
-void refresh_readings()
+// callback when data is sent
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
 {
-  // reading the readings from the BME280 Chip
-  myData.temperature = bme.readTemperature();
-  myData.humidity = bme.readHumidity();
-  myData.pressure = bme.readPressure() / 100.0F;
-  myData.altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
-
-  // reading the readings from the MPU6050 Chip
-  sensors_event_t a, g, temp;
-  mpu.getEvent(&a, &g, &temp);
-
-  myData.temp6050 = temp.temperature;
-
-  myData.A_values[0] = a.acceleration.x;
-  myData.A_values[1] = a.acceleration.y;
-  myData.A_values[2] = a.acceleration.z;
-
-  myData.G_values[0] = g.gyro.x;
-  myData.G_values[1] = g.gyro.y;
-  myData.G_values[2] = g.gyro.z;
+  Serial.print("\r\nLast Packet Send Status:\t");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
 
 // kind of interrupt function
@@ -424,4 +425,8 @@ void detectChange()
     // Update the change
     delay(1000);
   }
+  myData.pinStatus[0] = digitalRead(INPIN_1);
+  myData.pinStatus[1] = digitalRead(INPIN_2);
+  myData.pinStatus[2] = digitalRead(INPIN_3);
+  myData.pinStatus[3] = digitalRead(INPIN_4);
 }
