@@ -66,6 +66,8 @@ uint8_t broadcastAddress[] = {0x24, 0x62, 0xAB, 0xF9, 0x0E, 0x98};
 typedef struct struct_message
 {
   int id;            // must be unique for each sender board
+
+  // controller pin state
   int pinStatus[4];  // for peripheral status
 
   // for BME Chip
