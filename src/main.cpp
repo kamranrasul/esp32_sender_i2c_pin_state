@@ -43,7 +43,7 @@ void readPins();
 void printLocalTime();
 void refresh_readings();
 void espNowSend();
-void OnDataSent();
+//void OnDataSent();
 void detectChange();
 
 // Local WiFi Credentials
@@ -260,6 +260,13 @@ void mpu6050Setup()
   }
 }
 
+// callback when data is sent
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
+{
+  Serial.print("\r\nLast Packet Send Status:\t");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+}
+
 // setting up esp NOW
 void espNowSetup()
 {
@@ -329,9 +336,9 @@ void refresh_readings()
 {
   // reading the readings from the BME280 Chip
   myData.temperature = bme.readTemperature();
-  myData.humidity = bme.readHumidity();
-  myData.pressure = bme.readPressure() / 100.0F;
-  myData.altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
+  myData.humidity    = bme.readHumidity();
+  myData.pressure    = bme.readPressure() / 100.0F;
+  myData.altitude    = bme.readAltitude(SEALEVELPRESSURE_HPA);
 
   // reading the readings from the MPU6050 Chip
   sensors_event_t a, g, temp;
@@ -346,27 +353,8 @@ void refresh_readings()
   myData.G_values[0] = g.gyro.x;
   myData.G_values[1] = g.gyro.y;
   myData.G_values[2] = g.gyro.z;
-}
 
-// esp NOW send message
-void espNowSend()
-{
-  Serial.println();
-  Serial.println("****************************************");
-
-  Serial.print("My MAC Address:  ");
-  Serial.println(WiFi.macAddress());
-
-  // display time
-  printLocalTime();
-
-  // reading Pins
-  readPins();
-
-  // reading from BME
-  refresh_readings();
-
-  // displaying BME280 values on the serial output
+    // displaying BME280 values on the serial output
   Serial.println();
   Serial.println("*** BME280 Values ***");
   Serial.printf("Temperature:   %-6.2f °C", myData.temperature);
@@ -387,6 +375,25 @@ void espNowSend()
   Serial.println();
   Serial.printf("Rotation       X: %5.2f, Y: %5.2f, Z: %5.2f   rad/s", myData.G_values[0], myData.G_values[1], myData.G_values[2]);
   Serial.println();
+}
+
+// esp NOW send message
+void espNowSend()
+{
+  Serial.println();
+  Serial.println("****************************************");
+
+  Serial.print("My MAC Address:  ");
+  Serial.println(WiFi.macAddress());
+
+  // display time
+  printLocalTime();
+
+  // reading Pins
+  readPins();
+
+  // reading from BME
+  refresh_readings();
 
   // Send message via ESP-NOW
   esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *)&myData, sizeof(myData));
@@ -399,13 +406,6 @@ void espNowSend()
   {
     Serial.println("Error sending the data");
   }
-}
-
-// callback when data is sent
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status)
-{
-  Serial.print("\r\nLast Packet Send Status:\t");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
 
 // kind of interrupt function
@@ -427,8 +427,4 @@ void detectChange()
     // Update the change
     delay(1000);
   }
-  myData.pinStatus[0] = digitalRead(INPIN_1);
-  myData.pinStatus[1] = digitalRead(INPIN_2);
-  myData.pinStatus[2] = digitalRead(INPIN_3);
-  myData.pinStatus[3] = digitalRead(INPIN_4);
 }
